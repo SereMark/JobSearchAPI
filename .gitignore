@@ -1,0 +1,36 @@
+### Build output ###
+target/
+*.class
+
+### Logs and JVM crash files ###
+*.log
+hs_err_pid*
+replay_pid*
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### Eclipse and Spring Tool Suite ###
+.apt_generated/
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+
+### Visual Studio Code ###
+.vscode/
+
+### Environment and secrets ###
+.env
+.env.*
+!.env.example
+
+### Operating system ###
+.DS_Store
+Thumbs.db
