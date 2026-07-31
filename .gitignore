@@ -31,6 +31,18 @@ out/
 .env.*
 !.env.example
 
+### Local application data and database exports ###
+/data/
+/exports/
+/postgres-data/
+*.backup
+*.db
+*.dump
+*.sql
+*.sqlite
+*.sqlite3
+!/src/main/resources/db/migration/*.sql
+
 ### Operating system ###
 .DS_Store
 Thumbs.db

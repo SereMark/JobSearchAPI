@@ -1,0 +1,198 @@
+package hu.seregergo.jobsearch.common.api;
+
+import hu.seregergo.jobsearch.jobposting.application.JobPostingNotFoundException;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+
+import java.net.URI;
+import java.util.Comparator;
+import java.util.List;
+
+@RestControllerAdvice
+public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(JobPostingNotFoundException.class)
+    ResponseEntity<Object> handleJobPostingNotFound(
+        JobPostingNotFoundException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.NOT_FOUND,
+            "Job posting not found",
+            exception.getMessage(),
+            "JOB_POSTING_NOT_FOUND",
+            "job-posting-not-found",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.NOT_FOUND,
+            request
+        );
+    }
+
+    @ExceptionHandler(Exception.class)
+    ResponseEntity<Object> handleUnexpectedException(
+        Exception exception,
+        WebRequest request
+    ) {
+        logger.error("Unhandled exception while processing an API request", exception);
+
+        ProblemDetail problem = createProblem(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "Internal server error",
+            "An unexpected error occurred",
+            "INTERNAL_ERROR",
+            "internal-error",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            request
+        );
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+        MethodArgumentNotValidException exception,
+        HttpHeaders headers,
+        HttpStatusCode status,
+        WebRequest request
+    ) {
+        List<ValidationError> errors = exception.getBindingResult()
+            .getAllErrors()
+            .stream()
+            .map(error -> new ValidationError(
+                error instanceof FieldError fieldError
+                    ? fieldError.getField()
+                    : "request",
+                error.getDefaultMessage() == null
+                    ? "Invalid value"
+                    : error.getDefaultMessage()
+            ))
+            .distinct()
+            .sorted(
+                Comparator.comparing(ValidationError::field)
+                    .thenComparing(ValidationError::message)
+            )
+            .toList();
+
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Request validation failed",
+            "One or more request fields are invalid",
+            "VALIDATION_FAILED",
+            "validation-failed",
+            request
+        );
+        problem.setProperty("errors", errors);
+
+        return handleExceptionInternal(exception, problem, headers, status, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleHttpMessageNotReadable(
+        HttpMessageNotReadableException exception,
+        HttpHeaders headers,
+        HttpStatusCode status,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Malformed request",
+            "The request body is missing or cannot be read",
+            "MALFORMED_REQUEST",
+            "malformed-request",
+            request
+        );
+
+        return handleExceptionInternal(exception, problem, headers, status, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleTypeMismatch(
+        TypeMismatchException exception,
+        HttpHeaders headers,
+        HttpStatusCode status,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Invalid request parameter",
+            "A request parameter has an invalid value or format",
+            "INVALID_PARAMETER",
+            "invalid-parameter",
+            request
+        );
+
+        return handleExceptionInternal(exception, problem, headers, status, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(
+        Exception exception,
+        Object body,
+        HttpHeaders headers,
+        HttpStatusCode status,
+        WebRequest request
+    ) {
+        ProblemDetail problem = body instanceof ProblemDetail problemDetail
+            ? problemDetail
+            : ProblemDetail.forStatusAndDetail(status, "The request could not be processed");
+
+        if (problem.getProperties() == null
+            || !problem.getProperties().containsKey("code")) {
+            problem.setProperty("code", "HTTP_" + status.value());
+        }
+        if (problem.getInstance() == null) {
+            problem.setInstance(requestUri(request));
+        }
+
+        return super.handleExceptionInternal(exception, problem, headers, status, request);
+    }
+
+    private ProblemDetail createProblem(
+        HttpStatus status,
+        String title,
+        String detail,
+        String code,
+        String type,
+        WebRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setTitle(title);
+        problem.setType(URI.create("urn:problem:" + type));
+        problem.setInstance(requestUri(request));
+        problem.setProperty("code", code);
+        return problem;
+    }
+
+    private URI requestUri(WebRequest request) {
+        if (request instanceof ServletWebRequest servletRequest) {
+            return URI.create(servletRequest.getRequest().getRequestURI());
+        }
+        return URI.create("/");
+    }
+
+    private record ValidationError(String field, String message) {
+    }
+}
