@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class FlywayMigrationTests extends PostgreSqlIntegrationTest {
 
     @Test
-    void upgradesExistingV1RowsWithSafeDefaults() {
+    void upgradesExistingV1RowsAndAddsTheApplicationSchema() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
             POSTGRES.getJdbcUrl(),
             POSTGRES.getUsername(),
@@ -74,5 +74,12 @@ class FlywayMigrationTests extends PostgreSqlIntegrationTest {
         assertEquals("JAVA", migrated.get("target_track"));
         assertNull(migrated.get("description_snapshot"));
         assertEquals(migrated.get("created_at"), migrated.get("updated_at"));
+        assertEquals(
+            "applications",
+            jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.applications')::text",
+                String.class
+            )
+        );
     }
 }

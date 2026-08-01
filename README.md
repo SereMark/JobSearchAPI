@@ -2,12 +2,12 @@
 
 [![CI][ci-badge]][ci-workflow]
 
-A local-first REST API for evaluating job opportunities before an application
-workflow begins.
+A local-first REST API for evaluating job opportunities and keeping every active
+application tied to a concrete next action.
 
 ## Current status
 
-The job-posting vertical slice is complete:
+The API now covers both opportunity evaluation and application workflow:
 
 - create, retrieve, and fully update a job posting;
 - classify opportunities as A, B, or C for either the Java or .NET target track;
@@ -15,6 +15,11 @@ The job-posting vertical slice is complete:
 - filter listings by target track and classification;
 - find possible duplicates by exact source URL or external ID without blocking
   legitimate reopened postings;
+- start one application for an A or B posting and keep the posting context in every
+  application response;
+- submit prepared applications, move directly between real-world interview stages,
+  close them with an outcome, and reopen non-final records;
+- list all, active, closed, or due application work in deterministic order;
 - persist data in PostgreSQL through Spring Data JPA and Hibernate;
 - manage schema changes with Flyway and validate the JPA mapping at startup;
 - return consistent Problem Details error responses;
@@ -22,7 +27,8 @@ The job-posting vertical slice is complete:
 - expose the API through OpenAPI and Swagger UI;
 - verify every pull request and `main` update in GitHub Actions.
 
-Application workflow tracking is the next vertical slice and is not implemented yet.
+PDF CV storage is deliberately not part of this slice. The next slice will add an
+idempotent multipart submission flow, stored CV metadata, and download support.
 
 ## Technology stack
 
@@ -47,6 +53,11 @@ Application workflow tracking is the next vertical slice and is not implemented 
 | `PUT` | `/api/job-postings/{id}` | Replaces all editable fields of a job posting |
 | `GET` | `/api/job-postings` | Lists summaries, optionally filtered by `targetTrack` and `classification` |
 | `GET` | `/api/job-postings/duplicate-candidates` | Finds exact source-reference matches as non-blocking warnings |
+| `POST` | `/api/applications` | Starts application preparation and returns `201 Created` |
+| `GET` | `/api/applications/{id}` | Returns one application with its posting context |
+| `GET` | `/api/applications` | Lists applications, optionally filtered by active state and due date |
+| `PUT` | `/api/applications/{id}/workflow` | Replaces workflow fields to move, close, or reopen an application |
+| `POST` | `/api/applications/{id}/submit` | Records the first submission and moves the application to `SUBMITTED` |
 
 Example create request:
 
@@ -84,6 +95,49 @@ Example duplicate check before creation or update:
 ```text
 GET /api/job-postings/duplicate-candidates?sourceUrl=https://careers.example.com/jobs/123
 ```
+
+Start preparing an application for an A or B posting:
+
+```json
+{
+  "jobPostingId": "b02385a1-bc9b-4a91-85c6-64d3fb82f040",
+  "nextAction": "Tailor the CV for the role",
+  "dueOn": "2026-08-04",
+  "note": "Emphasize recent Spring Boot work"
+}
+```
+
+The server creates it in `PREPARING`. A job posting can have at most one
+application, and a posting classified as `C` must be reclassified before work can
+start.
+
+Record the initial submission with `POST /api/applications/{id}/submit`:
+
+```json
+{
+  "submittedOn": "2026-08-01",
+  "nextAction": "Check for a response",
+  "dueOn": "2026-08-08"
+}
+```
+
+Application stages are `PREPARING`, `SUBMITTED`, `RECRUITER_SCREEN`,
+`TECHNICAL_INTERVIEW`, `TAKE_HOME`, `HIRING_MANAGER`, `FINAL`, and `OFFER`.
+Stages can be skipped or repeated because the API records what actually happened.
+
+An application stays active while `outcome` is null. Active records require both
+`nextAction` and `dueOn`; closed records require both to be null. Supported outcomes
+are `REJECTED`, `WITHDRAWN`, `NO_RESPONSE`, `ROLE_CANCELLED`, `OFFER_DECLINED`, and
+`SIGNED`. A signed application is final. Other closed applications can be reopened
+by clearing the outcome and assigning new work.
+
+List active work due on or before a date:
+
+```text
+GET /api/applications?active=true&dueOnOrBefore=2026-08-08
+```
+
+`dueOnOrBefore` is inclusive and can only be used with an explicit `active=true`.
 
 ## Running locally
 
@@ -144,9 +198,9 @@ Linux or macOS:
 ./mvnw clean verify
 ```
 
-The test suite includes focused request and domain tests, a v1-to-v2 migration
-test, database-constraint tests against PostgreSQL, and full Spring MVC
-integration tests for the API, OpenAPI document, and Swagger UI.
+The test suite includes focused request and domain tests, a v1-to-v3 migration
+test, database-constraint tests against PostgreSQL, and full Spring MVC integration
+tests for both APIs, the OpenAPI document, and Swagger UI.
 
 ## Design decisions
 
@@ -158,9 +212,17 @@ integration tests for the API, OpenAPI document, and Swagger UI.
 - `PUT` is a complete replacement of editable business fields; `createdAt` remains stable while `updatedAt` changes.
 - Full advert snapshots appear only in detail responses to keep routine lists small and private by default.
 - Source references are intentionally not unique. Duplicate lookup warns about exact matches, while the user decides whether a reopened posting is legitimate.
+- A posting has at most one application. A reopened external advert is represented
+  by a new posting instead of overwriting the earlier search history.
+- `PUT /workflow` is a complete workflow replacement. Initial submission is a
+  separate command so `submittedOn` cannot be changed accidentally.
+- Workflow stages are non-linear, but state invariants are enforced in request
+  validation, the domain model, and PostgreSQL constraints.
+- Application responses include the target track, company, and role title so due
+  work is useful without extra requests.
 - Listing is intentionally unpaginated for the small local dataset; pagination
   and supporting indexes belong to a scale-driven change.
-- Authentication, public deployment, and application workflow tracking are outside this slice.
+- CV binaries, authentication, and public deployment are outside this slice.
 
 ## Privacy
 

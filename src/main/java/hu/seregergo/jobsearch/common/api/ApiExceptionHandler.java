@@ -1,5 +1,7 @@
 package hu.seregergo.jobsearch.common.api;
 
+import hu.seregergo.jobsearch.jobapplication.application.JobApplicationNotFoundException;
+import hu.seregergo.jobsearch.jobapplication.domain.ApplicationConflictException;
 import hu.seregergo.jobsearch.jobposting.application.JobPostingNotFoundException;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
@@ -22,6 +24,69 @@ import java.util.List;
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(JobApplicationNotFoundException.class)
+    ResponseEntity<Object> handleJobApplicationNotFound(
+        JobApplicationNotFoundException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.NOT_FOUND,
+            "Application not found",
+            exception.getMessage(),
+            "APPLICATION_NOT_FOUND",
+            "application-not-found",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.NOT_FOUND,
+            request
+        );
+    }
+
+    @ExceptionHandler(ApplicationConflictException.class)
+    ResponseEntity<Object> handleApplicationConflict(
+        ApplicationConflictException exception,
+        WebRequest request
+    ) {
+        ConflictDescriptor descriptor = switch (exception.getReason()) {
+            case ALREADY_EXISTS -> new ConflictDescriptor(
+                "Application already exists",
+                "APPLICATION_ALREADY_EXISTS",
+                "application-already-exists"
+            );
+            case INELIGIBLE_JOB_POSTING -> new ConflictDescriptor(
+                "Job posting is not eligible",
+                "APPLICATION_JOB_POSTING_INELIGIBLE",
+                "application-job-posting-ineligible"
+            );
+            case INVALID_TRANSITION -> new ConflictDescriptor(
+                "Application state conflict",
+                "APPLICATION_STATE_CONFLICT",
+                "application-state-conflict"
+            );
+        };
+        ProblemDetail problem = createProblem(
+            HttpStatus.CONFLICT,
+            descriptor.title(),
+            exception.getMessage(),
+            descriptor.code(),
+            descriptor.type(),
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.CONFLICT,
+            request
+        );
+    }
 
     @ExceptionHandler(JobPostingNotFoundException.class)
     ResponseEntity<Object> handleJobPostingNotFound(
@@ -194,5 +259,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     private record ValidationError(String field, String message) {
+    }
+
+    private record ConflictDescriptor(String title, String code, String type) {
     }
 }
