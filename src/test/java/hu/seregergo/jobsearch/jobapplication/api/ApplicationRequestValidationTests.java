@@ -2,13 +2,17 @@ package hu.seregergo.jobsearch.jobapplication.api;
 
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationOutcome;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationStage;
+import hu.seregergo.jobsearch.jobapplication.domain.CvLanguage;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
@@ -45,7 +49,21 @@ class ApplicationRequestValidationTests {
             new SubmitApplicationRequest(
                 LocalDate.now(),
                 "Check for a response",
-                LocalDate.now().plusDays(7)
+                LocalDate.now().plusDays(7),
+                null,
+                null
+            ),
+            new SubmitApplicationRequest(
+                LocalDate.now(),
+                "Check for a response",
+                LocalDate.now().plusDays(7),
+                CvLanguage.EN,
+                pdfFile()
+            ),
+            new RecordSentCvRequest(
+                LocalDate.now(),
+                CvLanguage.HU,
+                pdfFile()
             ),
             new UpdateApplicationWorkflowRequest(
                 ApplicationStage.TECHNICAL_INTERVIEW,
@@ -152,10 +170,48 @@ class ApplicationRequestValidationTests {
         SubmitApplicationRequest request = new SubmitApplicationRequest(
             LocalDate.now().plusDays(1),
             "Check for a response",
-            LocalDate.now().plusDays(7)
+            LocalDate.now().plusDays(7),
+            null,
+            null
         );
 
         assertEquals(Set.of("submittedOn"), violatedFields(request));
+    }
+
+    @Test
+    void cvAndItsLanguageMustBeProvidedTogether() {
+        SubmitApplicationRequest fileWithoutLanguage = new SubmitApplicationRequest(
+            LocalDate.now(),
+            "Check for a response",
+            LocalDate.now().plusDays(7),
+            null,
+            pdfFile()
+        );
+        SubmitApplicationRequest languageWithoutFile = new SubmitApplicationRequest(
+            LocalDate.now(),
+            "Check for a response",
+            LocalDate.now().plusDays(7),
+            CvLanguage.EN,
+            null
+        );
+
+        assertEquals(
+            Set.of("cvLanguageConsistent"),
+            violatedFields(fileWithoutLanguage)
+        );
+        assertEquals(
+            Set.of("cvLanguageConsistent"),
+            violatedFields(languageWithoutFile)
+        );
+    }
+
+    private MockMultipartFile pdfFile() {
+        return new MockMultipartFile(
+            "cv",
+            "CV.pdf",
+            MediaType.APPLICATION_PDF_VALUE,
+            "%PDF-1.7".getBytes(StandardCharsets.US_ASCII)
+        );
     }
 
     private void assertAllValid(Object... requests) {

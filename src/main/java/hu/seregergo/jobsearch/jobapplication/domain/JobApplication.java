@@ -13,6 +13,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -348,7 +349,7 @@ public class JobApplication {
             return null;
         }
 
-        String normalized = value.strip();
+        String normalized = Normalizer.normalize(value.strip(), Normalizer.Form.NFC);
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }

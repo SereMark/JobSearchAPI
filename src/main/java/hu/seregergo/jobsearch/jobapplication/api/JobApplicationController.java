@@ -1,7 +1,14 @@
 package hu.seregergo.jobsearch.jobapplication.api;
 
+import hu.seregergo.jobsearch.jobapplication.application.ApplicationSubmissionReceipt;
+import hu.seregergo.jobsearch.jobapplication.application.ApplicationSubmissionService;
 import hu.seregergo.jobsearch.jobapplication.application.JobApplicationService;
+import hu.seregergo.jobsearch.jobapplication.application.SubmittedCvDownload;
+import hu.seregergo.jobsearch.jobapplication.application.SubmittedCvFileValidator;
+import hu.seregergo.jobsearch.jobapplication.application.SubmittedCvMetadata;
+import hu.seregergo.jobsearch.jobapplication.application.StoredOperationResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -11,20 +18,24 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,9 +45,17 @@ import java.util.UUID;
 public class JobApplicationController {
 
     private final JobApplicationService service;
+    private final ApplicationSubmissionService submissionService;
+    private final SubmittedCvFileValidator cvFileValidator;
 
-    public JobApplicationController(JobApplicationService service) {
+    public JobApplicationController(
+        JobApplicationService service,
+        ApplicationSubmissionService submissionService,
+        SubmittedCvFileValidator cvFileValidator
+    ) {
         this.service = service;
+        this.submissionService = submissionService;
+        this.cvFileValidator = cvFileValidator;
     }
 
     @PostMapping
@@ -209,11 +228,14 @@ public class JobApplicationController {
         );
     }
 
-    @PostMapping("/{id}/submit")
+    @PostMapping(
+        value = "/{id}/submit",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
     @Operation(
-        summary = "Mark a prepared application as submitted",
-        description = "Moves an active PREPARING application to SUBMITTED and records "
-            + "its submission date."
+        summary = "Submit a prepared application",
+        description = "Atomically records the submission, its optional PDF CV, and a "
+            + "durable idempotent response."
     )
     @ApiResponses({
         @ApiResponse(
@@ -221,12 +243,12 @@ public class JobApplicationController {
             description = "Application submitted",
             content = @Content(
                 mediaType = MediaType.APPLICATION_JSON_VALUE,
-                schema = @Schema(implementation = JobApplicationResponse.class)
+                schema = @Schema(implementation = ApplicationSubmissionReceipt.class)
             )
         ),
         @ApiResponse(
             responseCode = "400",
-            description = "Request validation or deserialization failed",
+            description = "A field, idempotency key, or PDF is invalid",
             content = @Content(
                 mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
                 schema = @Schema(implementation = ProblemDetail.class)
@@ -242,17 +264,130 @@ public class JobApplicationController {
         ),
         @ApiResponse(
             responseCode = "409",
-            description = "The application is not active and PREPARING",
+            description = "The state conflicts or the idempotency key was reused",
             content = @Content(
                 mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
                 schema = @Schema(implementation = ProblemDetail.class)
             )
         )
     })
-    public JobApplicationResponse submit(
+    public ResponseEntity<String> submit(
         @PathVariable UUID id,
-        @Valid @RequestBody SubmitApplicationRequest request
+        @Parameter(
+            description = "Globally unique UUID used to replay this exact request",
+            required = true
+        )
+        @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+        @Valid @ModelAttribute SubmitApplicationRequest request
     ) {
-        return JobApplicationResponse.from(service.submit(id, request.toCommand()));
+        return jsonResponse(
+            submissionService.submit(
+                id,
+                idempotencyKey,
+                request.toCommand(cvFileValidator)
+            )
+        );
+    }
+
+    @PostMapping(
+        value = "/{id}/record-sent-cv",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @Operation(
+        summary = "Record a previously sent CV",
+        description = "Adds the one immutable PDF CV to an active application that "
+            + "was already submitted without one."
+    )
+    @ApiResponses({
+        @ApiResponse(
+            responseCode = "200",
+            description = "CV recorded or the original response replayed",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_JSON_VALUE,
+                schema = @Schema(implementation = SubmittedCvMetadata.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "400",
+            description = "A field, idempotency key, or PDF is invalid",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                schema = @Schema(implementation = ProblemDetail.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Application not found",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                schema = @Schema(implementation = ProblemDetail.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = "The state conflicts or the idempotency key was reused",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                schema = @Schema(implementation = ProblemDetail.class)
+            )
+        )
+    })
+    public ResponseEntity<String> recordSentCv(
+        @PathVariable UUID id,
+        @Parameter(
+            description = "Globally unique UUID used to replay this exact request",
+            required = true
+        )
+        @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+        @Valid @ModelAttribute RecordSentCvRequest request
+    ) {
+        return jsonResponse(
+            submissionService.recordSentCv(
+                id,
+                idempotencyKey,
+                request.toCommand(cvFileValidator)
+            )
+        );
+    }
+
+    @GetMapping("/{id}/submitted-cv")
+    @Operation(summary = "Download the exact submitted PDF CV")
+    @ApiResponses({
+        @ApiResponse(
+            responseCode = "200",
+            description = "Stored PDF bytes",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_PDF_VALUE,
+                schema = @Schema(type = "string", format = "binary")
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Application or submitted CV not found",
+            content = @Content(
+                mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                schema = @Schema(implementation = ProblemDetail.class)
+            )
+        )
+    })
+    public ResponseEntity<byte[]> downloadSubmittedCv(@PathVariable UUID id) {
+        SubmittedCvDownload download = submissionService.download(id);
+        ContentDisposition disposition = ContentDisposition.attachment()
+            .filename(download.originalFileName(), StandardCharsets.UTF_8)
+            .build();
+        byte[] bytes = download.bytes();
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .header("X-Content-Type-Options", "nosniff")
+            .contentLength(bytes.length)
+            .body(bytes);
+    }
+
+    private ResponseEntity<String> jsonResponse(StoredOperationResponse response) {
+        return ResponseEntity.status(response.status())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(response.body());
     }
 }

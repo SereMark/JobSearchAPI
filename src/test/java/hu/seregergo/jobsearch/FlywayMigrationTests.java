@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class FlywayMigrationTests extends PostgreSqlIntegrationTest {
 
     @Test
-    void upgradesExistingV1RowsAndAddsTheApplicationSchema() {
+    void upgradesExistingV1RowsAndAddsTheCompleteApplicationSchema() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
             POSTGRES.getJdbcUrl(),
             POSTGRES.getUsername(),
@@ -78,6 +78,28 @@ class FlywayMigrationTests extends PostgreSqlIntegrationTest {
             "applications",
             jdbcTemplate.queryForObject(
                 "SELECT to_regclass('public.applications')::text",
+                String.class
+            )
+        );
+        assertEquals(
+            "submitted_cvs",
+            jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.submitted_cvs')::text",
+                String.class
+            )
+        );
+        assertEquals(
+            "application_idempotency_records",
+            jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.application_idempotency_records')::text",
+                String.class
+            )
+        );
+        assertEquals(
+            "4",
+            jdbcTemplate.queryForObject(
+                "SELECT version FROM flyway_schema_history "
+                    + "WHERE success ORDER BY installed_rank DESC LIMIT 1",
                 String.class
             )
         );

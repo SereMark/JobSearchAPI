@@ -53,6 +53,8 @@ class JobApplicationRepositoryTests extends PostgreSqlIntegrationTest {
 
     @BeforeEach
     void clearDatabase() {
+        jdbcTemplate.update("DELETE FROM application_idempotency_records");
+        jdbcTemplate.update("DELETE FROM submitted_cvs");
         applicationRepository.deleteAll();
         jobPostingRepository.deleteAll();
     }

@@ -43,6 +43,10 @@ public class ApplicationConflictException extends RuntimeException {
         return new ApplicationConflictException(Reason.INVALID_TRANSITION, message);
     }
 
+    public static ApplicationConflictException idempotencyConflict(String message) {
+        return new ApplicationConflictException(Reason.IDEMPOTENCY_CONFLICT, message);
+    }
+
     public Reason getReason() {
         return reason;
     }
@@ -50,6 +54,7 @@ public class ApplicationConflictException extends RuntimeException {
     public enum Reason {
         ALREADY_EXISTS,
         INELIGIBLE_JOB_POSTING,
-        INVALID_TRANSITION
+        INVALID_TRANSITION,
+        IDEMPOTENCY_CONFLICT
     }
 }

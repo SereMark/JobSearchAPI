@@ -4,12 +4,15 @@ import hu.seregergo.jobsearch.PostgreSqlIntegrationTest;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationOutcome;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationStage;
 import hu.seregergo.jobsearch.jobapplication.domain.JobApplication;
+import hu.seregergo.jobsearch.jobapplication.persistence.ApplicationIdempotencyRecordRepository;
 import hu.seregergo.jobsearch.jobapplication.persistence.JobApplicationRepository;
+import hu.seregergo.jobsearch.jobapplication.persistence.SubmittedCvRepository;
 import hu.seregergo.jobsearch.jobposting.domain.JobPosting;
 import hu.seregergo.jobsearch.jobposting.domain.JobPostingClassification;
 import hu.seregergo.jobsearch.jobposting.domain.TargetTrack;
 import hu.seregergo.jobsearch.jobposting.domain.WorkMode;
 import hu.seregergo.jobsearch.jobposting.persistence.JobPostingRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +30,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.hasItems;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -47,10 +51,19 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
     private JobApplicationRepository applicationRepository;
 
     @Autowired
+    private ApplicationIdempotencyRecordRepository idempotencyRepository;
+
+    @Autowired
+    private SubmittedCvRepository cvRepository;
+
+    @Autowired
     private JobPostingRepository jobPostingRepository;
 
     @BeforeEach
+    @AfterEach
     void clearDatabase() {
+        idempotencyRepository.deleteAll();
+        cvRepository.deleteAll();
         applicationRepository.deleteAll();
         jobPostingRepository.deleteAll();
     }
@@ -238,21 +251,16 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
             .andExpect(jsonPath("$.code").value("APPLICATION_STATE_CONFLICT"));
 
         LocalDate today = LocalDate.now();
-        mockMvc.perform(post("/api/applications/{id}/submit", application.getId())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(submitRequestJson(today)))
+        mockMvc.perform(submitRequest(application.getId(), UUID.randomUUID(), today))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.stage").value("SUBMITTED"))
             .andExpect(jsonPath("$.submittedOn").value(today.toString()))
-            .andExpect(jsonPath("$.stageLabel").doesNotExist())
             .andExpect(jsonPath("$.nextAction").value("Check for a response"))
-            .andExpect(jsonPath("$.note").value("Waiting for one reference"));
+            .andExpect(jsonPath("$.submittedCv").doesNotExist());
 
-        mockMvc.perform(post("/api/applications/{id}/submit", application.getId())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(submitRequestJson(today)))
+        mockMvc.perform(submitRequest(application.getId(), UUID.randomUUID(), today))
             .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.code").value("APPLICATION_STATE_CONFLICT"));
+            .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
 
         mockMvc.perform(put("/api/applications/{id}/workflow", application.getId())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -322,9 +330,8 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
             .andExpect(jsonPath("$.active").value(false));
 
         LocalDate today = LocalDate.now();
-        mockMvc.perform(post("/api/applications/{id}/submit", application.getId())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(submitRequestJson(today)))
+        UUID idempotencyKey = UUID.randomUUID();
+        mockMvc.perform(submitRequest(application.getId(), idempotencyKey, today))
             .andExpect(status().isConflict());
 
         mockMvc.perform(put("/api/applications/{id}/workflow", application.getId())
@@ -333,9 +340,7 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.active").value(true));
 
-        mockMvc.perform(post("/api/applications/{id}/submit", application.getId())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(submitRequestJson(today)))
+        mockMvc.perform(submitRequest(application.getId(), idempotencyKey, today))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.stage").value("SUBMITTED"));
     }
@@ -368,9 +373,7 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
             .andExpect(jsonPath("$.errors[0].field").value("outcome"));
 
         LocalDate tomorrow = LocalDate.now().plusDays(1);
-        mockMvc.perform(post("/api/applications/{id}/submit", application.getId())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(submitRequestJson(tomorrow)))
+        mockMvc.perform(submitRequest(application.getId(), UUID.randomUUID(), tomorrow))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
             .andExpect(jsonPath("$.errors[0].field").value("submittedOn"));
@@ -412,12 +415,41 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
             .andExpect(jsonPath(
                 "$.paths['/api/applications/{id}/submit'].post.responses['200']"
             ).exists())
+            .andExpect(jsonPath(
+                "$.paths['/api/applications/{id}/submit'].post.requestBody"
+                    + ".content['multipart/form-data']"
+            ).exists())
+            .andExpect(jsonPath(
+                "$.paths['/api/applications/{id}/submit'].post.parameters[*].name",
+                hasItems("id", "Idempotency-Key")
+            ))
+            .andExpect(jsonPath(
+                "$.paths['/api/applications/{id}/record-sent-cv']"
+                    + ".post.responses['409']"
+            ).exists())
+            .andExpect(jsonPath(
+                "$.paths['/api/applications/{id}/record-sent-cv']"
+                    + ".post.parameters[*].name",
+                hasItems("id", "Idempotency-Key")
+            ))
+            .andExpect(jsonPath(
+                "$.paths['/api/applications/{id}/submitted-cv']"
+                    + ".get.responses['200'].content['application/pdf']"
+            ).exists())
             .andExpect(jsonPath("$.components.schemas.CreateApplicationRequest")
                 .exists())
             .andExpect(jsonPath("$.components.schemas.UpdateApplicationWorkflowRequest")
                 .exists())
             .andExpect(jsonPath("$.components.schemas.SubmitApplicationRequest")
                 .exists())
+            .andExpect(jsonPath("$.components.schemas.RecordSentCvRequest")
+                .exists())
+            .andExpect(jsonPath(
+                "$.components.schemas.SubmitApplicationRequest.properties.cv.format"
+            ).value("binary"))
+            .andExpect(jsonPath(
+                "$.components.schemas.RecordSentCvRequest.properties.cv.format"
+            ).value("binary"))
             .andExpect(jsonPath("$.components.schemas.JobApplicationResponse")
                 .exists())
             .andReturn();
@@ -507,13 +539,12 @@ class JobApplicationApiIntegrationTests extends PostgreSqlIntegrationTest {
             """.formatted(stage, outcome, note);
     }
 
-    private String submitRequestJson(LocalDate submittedOn) {
-        return """
-            {
-              "submittedOn": "%s",
-              "nextAction": "Check for a response",
-              "dueOn": "%s"
-            }
-            """.formatted(submittedOn, submittedOn.plusDays(7));
+    private org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder
+        submitRequest(UUID applicationId, UUID idempotencyKey, LocalDate submittedOn) {
+        return multipart("/api/applications/{id}/submit", applicationId)
+            .header("Idempotency-Key", idempotencyKey)
+            .param("submittedOn", submittedOn.toString())
+            .param("nextAction", "Check for a response")
+            .param("dueOn", submittedOn.plusDays(7).toString());
     }
 }

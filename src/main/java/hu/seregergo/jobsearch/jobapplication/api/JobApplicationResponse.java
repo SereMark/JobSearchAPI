@@ -1,5 +1,7 @@
 package hu.seregergo.jobsearch.jobapplication.api;
 
+import hu.seregergo.jobsearch.jobapplication.application.JobApplicationDetails;
+import hu.seregergo.jobsearch.jobapplication.application.SubmittedCvMetadata;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationOutcome;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationStage;
 import hu.seregergo.jobsearch.jobapplication.domain.JobApplication;
@@ -25,10 +27,12 @@ public record JobApplicationResponse(
     String note,
     boolean active,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    SubmittedCvMetadata submittedCv
 ) {
 
-    public static JobApplicationResponse from(JobApplication application) {
+    public static JobApplicationResponse from(JobApplicationDetails details) {
+        JobApplication application = details.application();
         JobPosting jobPosting = application.getJobPosting();
         return new JobApplicationResponse(
             application.getId(),
@@ -45,7 +49,8 @@ public record JobApplicationResponse(
             application.getNote(),
             application.isActive(),
             application.getCreatedAt(),
-            application.getUpdatedAt()
+            application.getUpdatedAt(),
+            details.submittedCv()
         );
     }
 }

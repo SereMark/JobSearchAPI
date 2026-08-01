@@ -19,6 +19,10 @@ The API now covers both opportunity evaluation and application workflow:
   application response;
 - submit prepared applications, move directly between real-world interview stages,
   close them with an outcome, and reopen non-final records;
+- keep the exact PDF CV sent with an application, either during submission or once
+  afterwards, and download it without exposing its bytes in JSON;
+- make submission and later CV recording safely retryable with durable idempotency,
+  including concurrent requests;
 - list all, active, closed, or due application work in deterministic order;
 - persist data in PostgreSQL through Spring Data JPA and Hibernate;
 - manage schema changes with Flyway and validate the JPA mapping at startup;
@@ -26,9 +30,6 @@ The API now covers both opportunity evaluation and application workflow:
 - exercise the complete Spring MVC-to-database path with integration tests;
 - expose the API through OpenAPI and Swagger UI;
 - verify every pull request and `main` update in GitHub Actions.
-
-PDF CV storage is deliberately not part of this slice. The next slice will add an
-idempotent multipart submission flow, stored CV metadata, and download support.
 
 ## Technology stack
 
@@ -57,7 +58,9 @@ idempotent multipart submission flow, stored CV metadata, and download support.
 | `GET` | `/api/applications/{id}` | Returns one application with its posting context |
 | `GET` | `/api/applications` | Lists applications, optionally filtered by active state and due date |
 | `PUT` | `/api/applications/{id}/workflow` | Replaces workflow fields to move, close, or reopen an application |
-| `POST` | `/api/applications/{id}/submit` | Records the first submission and moves the application to `SUBMITTED` |
+| `POST` | `/api/applications/{id}/submit` | Submits the application with an optional PDF CV; requires an idempotency key |
+| `POST` | `/api/applications/{id}/record-sent-cv` | Adds the immutable PDF CV later; requires a separate idempotency key |
+| `GET` | `/api/applications/{id}/submitted-cv` | Downloads the exact stored PDF with `Cache-Control: no-store` |
 
 Example create request:
 
@@ -111,15 +114,35 @@ The server creates it in `PREPARING`. A job posting can have at most one
 application, and a posting classified as `C` must be reclassified before work can
 start.
 
-Record the initial submission with `POST /api/applications/{id}/submit`:
+Record the initial submission as multipart form data. In PowerShell, `curl.exe`
+keeps the example independent of PowerShell's `curl` alias:
 
-```json
-{
-  "submittedOn": "2026-08-01",
-  "nextAction": "Check for a response",
-  "dueOn": "2026-08-08"
-}
+```powershell
+$applicationId = "b02385a1-bc9b-4a91-85c6-64d3fb82f040"
+$idempotencyKey = [guid]::NewGuid()
+
+curl.exe --request POST "http://127.0.0.1:8080/api/applications/$applicationId/submit" `
+  --header "Idempotency-Key: $idempotencyKey" `
+  --form "submittedOn=2026-08-01" `
+  --form "nextAction=Check for a response" `
+  --form "dueOn=2026-08-08" `
+  --form "cvLanguage=EN" `
+  --form "cv=@C:\path\to\cv.pdf;type=application/pdf"
 ```
+
+Omit both `cv` and `cvLanguage` when no CV was sent. If the application was
+submitted without one, `POST /api/applications/{id}/record-sent-cv` accepts
+`sentOn`, `cvLanguage`, and `cv` later while the application is still active.
+
+Each write needs a globally unique UUID in `Idempotency-Key`. Repeating the exact
+same request with the same key returns the original status and response body, even
+after the application has moved or closed. Reusing the key for different data, or
+retrying the completed operation with a new key, returns `409 Conflict`.
+
+CV uploads must be non-empty PDFs no larger than 5 MiB. The API checks the `.pdf`
+file name, exact `application/pdf` content type, `%PDF-` header, size, and a
+server-computed SHA-256 hash. Application detail and list responses contain only
+the CV metadata; the binary is available solely through the download endpoint.
 
 Application stages are `PREPARING`, `SUBMITTED`, `RECRUITER_SCREEN`,
 `TECHNICAL_INTERVIEW`, `TAKE_HOME`, `HIRING_MANAGER`, `FINAL`, and `OFFER`.
@@ -198,9 +221,10 @@ Linux or macOS:
 ./mvnw clean verify
 ```
 
-The test suite includes focused request and domain tests, a v1-to-v3 migration
-test, database-constraint tests against PostgreSQL, and full Spring MVC integration
-tests for both APIs, the OpenAPI document, and Swagger UI.
+The test suite includes focused request, file, and domain tests, a v1-to-v4
+migration test, database-constraint tests against PostgreSQL, and full Spring MVC
+integration tests for both APIs, durable replay, race conditions, exact PDF bytes,
+the OpenAPI document, and Swagger UI.
 
 ## Design decisions
 
@@ -216,17 +240,26 @@ tests for both APIs, the OpenAPI document, and Swagger UI.
   by a new posting instead of overwriting the earlier search history.
 - `PUT /workflow` is a complete workflow replacement. Initial submission is a
   separate command so `submittedOn` cannot be changed accidentally.
+- Submission and later CV recording store their idempotency record in the same
+  transaction as the business change. A row lock serializes operations on one
+  application; PostgreSQL unique constraints settle cross-application key races.
+- Idempotency fingerprints use canonical request values and the server-computed PDF
+  hash. Stored responses contain no PDF bytes, advert snapshot, or application note.
+- One immutable CV can belong to an application. PostgreSQL stores its exact bytes
+  in `bytea`; ordinary responses use metadata projections so list queries never load
+  the binary.
 - Workflow stages are non-linear, but state invariants are enforced in request
   validation, the domain model, and PostgreSQL constraints.
 - Application responses include the target track, company, and role title so due
   work is useful without extra requests.
 - Listing is intentionally unpaginated for the small local dataset; pagination
   and supporting indexes belong to a scale-driven change.
-- CV binaries, authentication, and public deployment are outside this slice.
+- Authentication and public deployment are outside this slice. The server remains
+  local-only by default.
 
 ## Privacy
 
-Only synthetic test data belongs in Git. Real job applications, advert text,
+Only synthetic test data belongs in Git. Real CVs, job applications, advert text,
 recruiter messages, database files, dumps, exports, logs, and secrets must remain
 local and untracked.
 

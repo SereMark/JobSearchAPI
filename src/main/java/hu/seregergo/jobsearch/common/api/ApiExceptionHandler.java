@@ -1,6 +1,9 @@
 package hu.seregergo.jobsearch.common.api;
 
 import hu.seregergo.jobsearch.jobapplication.application.JobApplicationNotFoundException;
+import hu.seregergo.jobsearch.jobapplication.application.InvalidApplicationRequestException;
+import hu.seregergo.jobsearch.jobapplication.application.InvalidSubmittedCvException;
+import hu.seregergo.jobsearch.jobapplication.application.SubmittedCvNotFoundException;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationConflictException;
 import hu.seregergo.jobsearch.jobposting.application.JobPostingNotFoundException;
 import org.springframework.beans.TypeMismatchException;
@@ -12,11 +15,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.net.URI;
 import java.util.Comparator;
@@ -69,6 +74,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 "APPLICATION_STATE_CONFLICT",
                 "application-state-conflict"
             );
+            case IDEMPOTENCY_CONFLICT -> new ConflictDescriptor(
+                "Idempotency conflict",
+                "IDEMPOTENCY_CONFLICT",
+                "idempotency-conflict"
+            );
         };
         ProblemDetail problem = createProblem(
             HttpStatus.CONFLICT,
@@ -84,6 +94,75 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             problem,
             new HttpHeaders(),
             HttpStatus.CONFLICT,
+            request
+        );
+    }
+
+    @ExceptionHandler(SubmittedCvNotFoundException.class)
+    ResponseEntity<Object> handleSubmittedCvNotFound(
+        SubmittedCvNotFoundException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.NOT_FOUND,
+            "Submitted CV not found",
+            exception.getMessage(),
+            "SUBMITTED_CV_NOT_FOUND",
+            "submitted-cv-not-found",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.NOT_FOUND,
+            request
+        );
+    }
+
+    @ExceptionHandler(InvalidSubmittedCvException.class)
+    ResponseEntity<Object> handleInvalidSubmittedCv(
+        InvalidSubmittedCvException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Invalid PDF CV",
+            exception.getMessage(),
+            "CV_VALIDATION_FAILED",
+            "cv-validation-failed",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.BAD_REQUEST,
+            request
+        );
+    }
+
+    @ExceptionHandler(InvalidApplicationRequestException.class)
+    ResponseEntity<Object> handleInvalidApplicationRequest(
+        InvalidApplicationRequestException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Request validation failed",
+            exception.getMessage(),
+            "VALIDATION_FAILED",
+            "validation-failed",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.BAD_REQUEST,
             request
         );
     }
@@ -210,6 +289,56 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         );
 
         return handleExceptionInternal(exception, problem, headers, status, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleServletRequestBindingException(
+        ServletRequestBindingException exception,
+        HttpHeaders headers,
+        HttpStatusCode status,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Missing or invalid request parameter",
+            "A required header or request parameter is missing or invalid",
+            "INVALID_PARAMETER",
+            "invalid-parameter",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            headers,
+            HttpStatus.BAD_REQUEST,
+            request
+        );
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+        MaxUploadSizeExceededException exception,
+        HttpHeaders headers,
+        HttpStatusCode status,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.BAD_REQUEST,
+            "Invalid PDF CV",
+            "The PDF CV must not exceed 5 MiB",
+            "CV_VALIDATION_FAILED",
+            "cv-validation-failed",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            headers,
+            HttpStatus.BAD_REQUEST,
+            request
+        );
     }
 
     @Override

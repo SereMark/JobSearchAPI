@@ -1,7 +1,9 @@
 package hu.seregergo.jobsearch.jobposting.api;
 
 import hu.seregergo.jobsearch.PostgreSqlIntegrationTest;
+import hu.seregergo.jobsearch.jobapplication.persistence.ApplicationIdempotencyRecordRepository;
 import hu.seregergo.jobsearch.jobapplication.persistence.JobApplicationRepository;
+import hu.seregergo.jobsearch.jobapplication.persistence.SubmittedCvRepository;
 import hu.seregergo.jobsearch.jobposting.domain.JobPosting;
 import hu.seregergo.jobsearch.jobposting.domain.JobPostingClassification;
 import hu.seregergo.jobsearch.jobposting.domain.TargetTrack;
@@ -53,8 +55,16 @@ class JobPostingApiIntegrationTests extends PostgreSqlIntegrationTest {
     @Autowired
     private JobApplicationRepository applicationRepository;
 
+    @Autowired
+    private ApplicationIdempotencyRecordRepository idempotencyRepository;
+
+    @Autowired
+    private SubmittedCvRepository cvRepository;
+
     @BeforeEach
     void clearDatabase() {
+        idempotencyRepository.deleteAll();
+        cvRepository.deleteAll();
         applicationRepository.deleteAll();
         repository.deleteAll();
     }
