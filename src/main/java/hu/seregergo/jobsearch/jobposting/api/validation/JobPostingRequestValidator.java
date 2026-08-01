@@ -1,16 +1,16 @@
 package hu.seregergo.jobsearch.jobposting.api.validation;
 
-import hu.seregergo.jobsearch.jobposting.api.CreateJobPostingRequest;
+import hu.seregergo.jobsearch.jobposting.api.JobPostingRequest;
 import hu.seregergo.jobsearch.jobposting.domain.JobPostingClassification;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
-public class CreateJobPostingRequestValidator
-    implements ConstraintValidator<ValidCreateJobPostingRequest, CreateJobPostingRequest> {
+public class JobPostingRequestValidator
+    implements ConstraintValidator<ValidJobPostingRequest, JobPostingRequest> {
 
     @Override
     public boolean isValid(
-        CreateJobPostingRequest request,
+        JobPostingRequest request,
         ConstraintValidatorContext context
     ) {
         if (request == null) {

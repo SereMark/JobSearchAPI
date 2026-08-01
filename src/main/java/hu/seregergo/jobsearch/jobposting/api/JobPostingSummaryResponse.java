@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
-public record JobPostingResponse(
+public record JobPostingSummaryResponse(
     UUID id,
     String companyName,
     String roleTitle,
@@ -22,13 +22,13 @@ public record JobPostingResponse(
     TargetTrack targetTrack,
     JobPostingClassification classification,
     String reviewNote,
-    String descriptionSnapshot,
+    boolean hasDescriptionSnapshot,
     Instant createdAt,
     Instant updatedAt
 ) {
 
-    public static JobPostingResponse from(JobPosting jobPosting) {
-        return new JobPostingResponse(
+    public static JobPostingSummaryResponse from(JobPosting jobPosting) {
+        return new JobPostingSummaryResponse(
             jobPosting.getId(),
             jobPosting.getCompanyName(),
             jobPosting.getRoleTitle(),
@@ -41,7 +41,7 @@ public record JobPostingResponse(
             jobPosting.getTargetTrack(),
             jobPosting.getClassification(),
             jobPosting.getReviewNote(),
-            jobPosting.getDescriptionSnapshot(),
+            jobPosting.getDescriptionSnapshot() != null,
             jobPosting.getCreatedAt(),
             jobPosting.getUpdatedAt()
         );

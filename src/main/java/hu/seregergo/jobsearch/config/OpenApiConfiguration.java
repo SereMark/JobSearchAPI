@@ -14,6 +14,6 @@ public class OpenApiConfiguration {
             .info(new Info()
                 .title("Job Search API")
                 .version("0.1.0")
-                .description("Local API for tracking job postings"));
+                .description("Local API for evaluating and tracking job opportunities"));
     }
 }

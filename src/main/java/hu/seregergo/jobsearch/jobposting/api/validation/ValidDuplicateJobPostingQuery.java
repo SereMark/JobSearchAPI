@@ -12,10 +12,10 @@ import java.lang.annotation.Target;
 @Documented
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@Constraint(validatedBy = CreateJobPostingRequestValidator.class)
-public @interface ValidCreateJobPostingRequest {
+@Constraint(validatedBy = DuplicateJobPostingQueryValidator.class)
+public @interface ValidDuplicateJobPostingQuery {
 
-    String message() default "Job posting request is invalid";
+    String message() default "Duplicate job posting query is invalid";
 
     Class<?>[] groups() default {};
 

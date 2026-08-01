@@ -6,7 +6,7 @@ import hu.seregergo.jobsearch.jobposting.domain.WorkMode;
 
 import java.time.LocalDate;
 
-public record CreateJobPostingCommand(
+public record UpdateJobPostingCommand(
     String companyName,
     String roleTitle,
     String source,

@@ -1,7 +1,7 @@
 package hu.seregergo.jobsearch.jobposting.api;
 
 import hu.seregergo.jobsearch.jobposting.api.validation.ValidJobPostingRequest;
-import hu.seregergo.jobsearch.jobposting.application.CreateJobPostingCommand;
+import hu.seregergo.jobsearch.jobposting.application.UpdateJobPostingCommand;
 import hu.seregergo.jobsearch.jobposting.domain.JobPostingClassification;
 import hu.seregergo.jobsearch.jobposting.domain.TargetTrack;
 import hu.seregergo.jobsearch.jobposting.domain.WorkMode;
@@ -16,8 +16,8 @@ import org.hibernate.validator.constraints.URL;
 import java.time.LocalDate;
 
 @ValidJobPostingRequest
-@Schema(description = "A job posting to evaluate and track")
-public record CreateJobPostingRequest(
+@Schema(description = "Complete replacement for a job posting's editable fields")
+public record UpdateJobPostingRequest(
     @Schema(example = "Example Technologies Kft.")
     @NotBlank(message = "Company name is required")
     @Size(max = 200, message = "Company name must not exceed 200 characters")
@@ -98,8 +98,8 @@ public record CreateJobPostingRequest(
     String descriptionSnapshot
 ) implements JobPostingRequest {
 
-    public CreateJobPostingCommand toCommand() {
-        return new CreateJobPostingCommand(
+    public UpdateJobPostingCommand toCommand() {
+        return new UpdateJobPostingCommand(
             companyName,
             roleTitle,
             source,

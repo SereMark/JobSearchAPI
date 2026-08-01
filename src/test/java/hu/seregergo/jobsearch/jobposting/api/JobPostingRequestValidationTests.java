@@ -1,6 +1,7 @@
 package hu.seregergo.jobsearch.jobposting.api;
 
 import hu.seregergo.jobsearch.jobposting.domain.JobPostingClassification;
+import hu.seregergo.jobsearch.jobposting.domain.TargetTrack;
 import hu.seregergo.jobsearch.jobposting.domain.WorkMode;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -16,7 +17,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class CreateJobPostingRequestValidationTests {
+class JobPostingRequestValidationTests {
 
     private static ValidatorFactory validatorFactory;
     private static Validator validator;
@@ -33,32 +34,27 @@ class CreateJobPostingRequestValidationTests {
     }
 
     @Test
-    void acceptsRequestWithSourceUrl() {
-        CreateJobPostingRequest request = validRequest(
+    void acceptsValidCreateAndUpdateRequests() {
+        CreateJobPostingRequest createRequest = validCreateRequest(
             "https://careers.example.com/jobs/123",
             null,
             JobPostingClassification.A,
             null
         );
-
-        assertTrue(validator.validate(request).isEmpty());
-    }
-
-    @Test
-    void acceptsRequestWithExternalId() {
-        CreateJobPostingRequest request = validRequest(
+        UpdateJobPostingRequest updateRequest = validUpdateRequest(
             null,
             "JOB-123",
             JobPostingClassification.B,
             "One optional technology is missing"
         );
 
-        assertTrue(validator.validate(request).isEmpty());
+        assertTrue(validator.validate(createRequest).isEmpty());
+        assertTrue(validator.validate(updateRequest).isEmpty());
     }
 
     @Test
     void rejectsMissingSourceReferenceAndMissingNoteForCClassification() {
-        CreateJobPostingRequest request = validRequest(
+        CreateJobPostingRequest request = validCreateRequest(
             null,
             null,
             JobPostingClassification.C,
@@ -73,7 +69,7 @@ class CreateJobPostingRequestValidationTests {
 
     @Test
     void rejectsInvalidSingleFieldValues() {
-        CreateJobPostingRequest request = new CreateJobPostingRequest(
+        UpdateJobPostingRequest request = new UpdateJobPostingRequest(
             "   ",
             "r".repeat(201),
             "",
@@ -82,8 +78,10 @@ class CreateJobPostingRequestValidationTests {
             "   ",
             null,
             LocalDate.of(2999, 1, 1),
+            null,
             JobPostingClassification.A,
-            null
+            null,
+            "   "
         );
 
         assertEquals(
@@ -94,13 +92,35 @@ class CreateJobPostingRequestValidationTests {
                 "sourceUrl",
                 "location",
                 "workMode",
-                "foundOn"
+                "foundOn",
+                "targetTrack",
+                "descriptionSnapshot"
             ),
             violatedFields(request)
         );
     }
 
-    private CreateJobPostingRequest validRequest(
+    @Test
+    void rejectsDescriptionSnapshotOverLimit() {
+        CreateJobPostingRequest request = new CreateJobPostingRequest(
+            "Example Technologies Kft.",
+            "Java Backend Developer",
+            "Company careers",
+            "https://careers.example.com/jobs/123",
+            null,
+            "Budapest",
+            WorkMode.HYBRID,
+            LocalDate.of(2020, 1, 15),
+            TargetTrack.JAVA,
+            JobPostingClassification.A,
+            null,
+            "x".repeat(50_001)
+        );
+
+        assertEquals(Set.of("descriptionSnapshot"), violatedFields(request));
+    }
+
+    private CreateJobPostingRequest validCreateRequest(
         String sourceUrl,
         String externalId,
         JobPostingClassification classification,
@@ -115,12 +135,36 @@ class CreateJobPostingRequestValidationTests {
             "Budapest",
             WorkMode.HYBRID,
             LocalDate.of(2020, 1, 15),
+            TargetTrack.JAVA,
             classification,
-            reviewNote
+            reviewNote,
+            "We are looking for a Java backend developer."
         );
     }
 
-    private Set<String> violatedFields(CreateJobPostingRequest request) {
+    private UpdateJobPostingRequest validUpdateRequest(
+        String sourceUrl,
+        String externalId,
+        JobPostingClassification classification,
+        String reviewNote
+    ) {
+        return new UpdateJobPostingRequest(
+            "Example Technologies Kft.",
+            "Java Backend Developer",
+            "Company careers",
+            sourceUrl,
+            externalId,
+            "Budapest",
+            WorkMode.HYBRID,
+            LocalDate.of(2020, 1, 15),
+            TargetTrack.JAVA,
+            classification,
+            reviewNote,
+            null
+        );
+    }
+
+    private Set<String> violatedFields(Object request) {
         return validator.validate(request)
             .stream()
             .map(violation -> violation.getPropertyPath().toString())
