@@ -26,7 +26,8 @@ out/
 ### Visual Studio Code ###
 .vscode/
 
-### Environment and secrets ###
+### Private local workspace, environment and secrets ###
+/.private/
 .env
 .env.*
 !.env.example
