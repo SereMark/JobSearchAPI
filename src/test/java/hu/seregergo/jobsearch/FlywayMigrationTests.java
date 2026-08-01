@@ -96,7 +96,14 @@ class FlywayMigrationTests extends PostgreSqlIntegrationTest {
             )
         );
         assertEquals(
-            "4",
+            "interview_reports",
+            jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.interview_reports')::text",
+                String.class
+            )
+        );
+        assertEquals(
+            "5",
             jdbcTemplate.queryForObject(
                 "SELECT version FROM flyway_schema_history "
                     + "WHERE success ORDER BY installed_rank DESC LIMIT 1",

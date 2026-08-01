@@ -1,8 +1,9 @@
 package hu.seregergo.jobsearch.common.api;
 
-import hu.seregergo.jobsearch.jobapplication.application.JobApplicationNotFoundException;
+import hu.seregergo.jobsearch.jobapplication.application.InterviewReportNotFoundException;
 import hu.seregergo.jobsearch.jobapplication.application.InvalidApplicationRequestException;
 import hu.seregergo.jobsearch.jobapplication.application.InvalidSubmittedCvException;
+import hu.seregergo.jobsearch.jobapplication.application.JobApplicationNotFoundException;
 import hu.seregergo.jobsearch.jobapplication.application.SubmittedCvNotFoundException;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationConflictException;
 import hu.seregergo.jobsearch.jobposting.application.JobPostingNotFoundException;
@@ -29,6 +30,29 @@ import java.util.List;
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(InterviewReportNotFoundException.class)
+    ResponseEntity<Object> handleInterviewReportNotFound(
+        InterviewReportNotFoundException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.NOT_FOUND,
+            "Interview report not found",
+            exception.getMessage(),
+            "INTERVIEW_REPORT_NOT_FOUND",
+            "interview-report-not-found",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.NOT_FOUND,
+            request
+        );
+    }
 
     @ExceptionHandler(JobApplicationNotFoundException.class)
     ResponseEntity<Object> handleJobApplicationNotFound(

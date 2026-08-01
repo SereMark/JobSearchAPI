@@ -19,6 +19,8 @@ The API now covers both opportunity evaluation and application workflow:
   application response;
 - submit prepared applications, move directly between real-world interview stages,
   close them with an outcome, and reopen non-final records;
+- keep a dated, editable reflection for every interview round without expanding
+  routine application responses;
 - keep the exact PDF CV sent with an application, either during submission or once
   afterwards, and download it without exposing its bytes in JSON;
 - make submission and later CV recording safely retryable with durable idempotency,
@@ -61,6 +63,10 @@ The API now covers both opportunity evaluation and application workflow:
 | `POST` | `/api/applications/{id}/submit` | Submits the application with an optional PDF CV; requires an idempotency key |
 | `POST` | `/api/applications/{id}/record-sent-cv` | Adds the immutable PDF CV later; requires a separate idempotency key |
 | `GET` | `/api/applications/{id}/submitted-cv` | Downloads the exact stored PDF with `Cache-Control: no-store` |
+| `POST` | `/api/applications/{id}/interview-reports` | Adds a reflection for one interview round |
+| `GET` | `/api/applications/{id}/interview-reports` | Lists interview reports from newest to oldest |
+| `GET` | `/api/applications/{id}/interview-reports/{reportId}` | Returns one interview report |
+| `PUT` | `/api/applications/{id}/interview-reports/{reportId}` | Replaces an interview report's editable fields |
 
 Example create request:
 
@@ -162,6 +168,21 @@ GET /api/applications?active=true&dueOnOrBefore=2026-08-08
 
 `dueOnOrBefore` is inclusive and can only be used with an explicit `active=true`.
 
+Record a reflection after each interview round:
+
+```json
+{
+  "interviewedOn": "2026-07-30",
+  "roundLabel": "Technical interview - round 1",
+  "report": "The architecture discussion went well. Revisit transaction isolation."
+}
+```
+
+Interview reports can also be added after an application has closed. They are
+returned only through their dedicated endpoints, ordered by interview date and
+creation time from newest to oldest. `PUT` replaces the three editable fields while
+preserving the report ID and creation time. Reports are not deleted through the API.
+
 ## Running locally
 
 Requirements:
@@ -221,10 +242,10 @@ Linux or macOS:
 ./mvnw clean verify
 ```
 
-The test suite includes focused request, file, and domain tests, a v1-to-v4
+The test suite includes focused request, file, and domain tests, a v1-to-v5
 migration test, database-constraint tests against PostgreSQL, and full Spring MVC
-integration tests for both APIs, durable replay, race conditions, exact PDF bytes,
-the OpenAPI document, and Swagger UI.
+integration tests for job postings, applications, interview reports, durable replay,
+race conditions, exact PDF bytes, the OpenAPI document, and Swagger UI.
 
 ## Design decisions
 
@@ -252,6 +273,8 @@ the OpenAPI document, and Swagger UI.
   validation, the domain model, and PostgreSQL constraints.
 - Application responses include the target track, company, and role title so due
   work is useful without extra requests.
+- Interview reports are separate child resources. This keeps private long-form notes
+  out of routine application lists while allowing multiple rounds on the same date.
 - Listing is intentionally unpaginated for the small local dataset; pagination
   and supporting indexes belong to a scale-driven change.
 - Authentication and public deployment are outside this slice. The server remains
