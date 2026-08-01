@@ -8,8 +8,12 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
+import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -25,7 +29,7 @@ import java.util.regex.Pattern;
         columnNames = {"application_id", "operation"}
     )
 )
-public class ApplicationIdempotencyRecord {
+public class ApplicationIdempotencyRecord implements Persistable<UUID> {
 
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
 
@@ -52,6 +56,9 @@ public class ApplicationIdempotencyRecord {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Transient
+    private boolean newRecord = true;
 
     protected ApplicationIdempotencyRecord() {
     }
@@ -110,6 +117,16 @@ public class ApplicationIdempotencyRecord {
         return idempotencyKey;
     }
 
+    @Override
+    public UUID getId() {
+        return idempotencyKey;
+    }
+
+    @Override
+    public boolean isNew() {
+        return newRecord;
+    }
+
     public UUID getApplicationId() {
         return application.getId();
     }
@@ -132,6 +149,12 @@ public class ApplicationIdempotencyRecord {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    @PostLoad
+    @PostPersist
+    private void markNotNew() {
+        newRecord = false;
     }
 
     private static String requireSha256(String value) {

@@ -1,8 +1,10 @@
 package hu.seregergo.jobsearch.jobapplication.persistence;
 
 import hu.seregergo.jobsearch.PostgreSqlIntegrationTest;
+import hu.seregergo.jobsearch.jobapplication.domain.ApplicationIdempotencyRecord;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationOutcome;
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationStage;
+import hu.seregergo.jobsearch.jobapplication.domain.IdempotencyOperation;
 import hu.seregergo.jobsearch.jobapplication.domain.JobApplication;
 import hu.seregergo.jobsearch.jobposting.domain.JobPosting;
 import hu.seregergo.jobsearch.jobposting.domain.JobPostingClassification;
@@ -41,6 +43,9 @@ class JobApplicationRepositoryTests extends PostgreSqlIntegrationTest {
 
     @Autowired
     private JobApplicationRepository applicationRepository;
+
+    @Autowired
+    private ApplicationIdempotencyRecordRepository idempotencyRepository;
 
     @Autowired
     private JobPostingRepository jobPostingRepository;
@@ -111,6 +116,50 @@ class JobApplicationRepositoryTests extends PostgreSqlIntegrationTest {
         assertThrows(
             DataIntegrityViolationException.class,
             () -> applicationRepository.saveAndFlush(duplicate)
+        );
+    }
+
+    @Test
+    void rejectsAnIdempotencyKeyThatIsAlreadyStoredForAnotherApplication() {
+        JobApplication first = savedApplication(
+            "First idempotent operation",
+            LocalDate.of(2026, 8, 2),
+            CREATED_AT
+        );
+        JobApplication second = savedApplication(
+            "Second idempotent operation",
+            LocalDate.of(2026, 8, 3),
+            CREATED_AT.plusSeconds(1)
+        );
+        UUID sharedKey = UUID.randomUUID();
+
+        idempotencyRepository.saveAndFlush(ApplicationIdempotencyRecord.create(
+            sharedKey,
+            first,
+            IdempotencyOperation.SUBMIT,
+            "a".repeat(64),
+            200,
+            "{\"application\":\"first\"}",
+            CREATED_AT
+        ));
+        entityManager.clear();
+
+        JobApplication reloadedSecond = applicationRepository.findById(second.getId())
+            .orElseThrow();
+        ApplicationIdempotencyRecord duplicate =
+            ApplicationIdempotencyRecord.create(
+                sharedKey,
+                reloadedSecond,
+                IdempotencyOperation.SUBMIT,
+                "b".repeat(64),
+                200,
+                "{\"application\":\"second\"}",
+                CREATED_AT.plusSeconds(1)
+            );
+
+        assertThrows(
+            DataIntegrityViolationException.class,
+            () -> idempotencyRepository.saveAndFlush(duplicate)
         );
     }
 
