@@ -7,6 +7,7 @@ import hu.seregergo.jobsearch.jobapplication.domain.ApplicationStage;
 import hu.seregergo.jobsearch.jobapplication.domain.JobApplication;
 import hu.seregergo.jobsearch.jobposting.domain.JobPosting;
 import hu.seregergo.jobsearch.jobposting.domain.TargetTrack;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,6 +29,8 @@ public record JobApplicationResponse(
     boolean active,
     Instant createdAt,
     Instant updatedAt,
+    @Schema(description = "Occurrence time of the application's latest activity")
+    Instant lastActivityAt,
     SubmittedCvMetadata submittedCv
 ) {
 
@@ -50,6 +53,7 @@ public record JobApplicationResponse(
             application.isActive(),
             application.getCreatedAt(),
             application.getUpdatedAt(),
+            details.lastActivityAt(),
             details.submittedCv()
         );
     }

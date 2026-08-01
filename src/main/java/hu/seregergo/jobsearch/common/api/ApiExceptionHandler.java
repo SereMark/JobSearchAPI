@@ -1,5 +1,6 @@
 package hu.seregergo.jobsearch.common.api;
 
+import hu.seregergo.jobsearch.jobapplication.application.ApplicationActivityNotFoundException;
 import hu.seregergo.jobsearch.jobapplication.application.InterviewReportNotFoundException;
 import hu.seregergo.jobsearch.jobapplication.application.InvalidApplicationRequestException;
 import hu.seregergo.jobsearch.jobapplication.application.InvalidSubmittedCvException;
@@ -30,6 +31,29 @@ import java.util.List;
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(ApplicationActivityNotFoundException.class)
+    ResponseEntity<Object> handleApplicationActivityNotFound(
+        ApplicationActivityNotFoundException exception,
+        WebRequest request
+    ) {
+        ProblemDetail problem = createProblem(
+            HttpStatus.NOT_FOUND,
+            "Application activity not found",
+            exception.getMessage(),
+            "APPLICATION_ACTIVITY_NOT_FOUND",
+            "application-activity-not-found",
+            request
+        );
+
+        return handleExceptionInternal(
+            exception,
+            problem,
+            new HttpHeaders(),
+            HttpStatus.NOT_FOUND,
+            request
+        );
+    }
 
     @ExceptionHandler(InterviewReportNotFoundException.class)
     ResponseEntity<Object> handleInterviewReportNotFound(

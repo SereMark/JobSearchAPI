@@ -21,6 +21,8 @@ The API now covers both opportunity evaluation and application workflow:
   close them with an outcome, and reopen non-final records;
 - keep a dated, editable reflection for every interview round without expanding
   routine application responses;
+- keep a chronological record of recruiter messages, calls, follow-ups, and tasks
+  without overwriting earlier contact history;
 - keep the exact PDF CV sent with an application, either during submission or once
   afterwards, and download it without exposing its bytes in JSON;
 - make submission and later CV recording safely retryable with durable idempotency,
@@ -63,6 +65,10 @@ The API now covers both opportunity evaluation and application workflow:
 | `POST` | `/api/applications/{id}/submit` | Submits the application with an optional PDF CV; requires an idempotency key |
 | `POST` | `/api/applications/{id}/record-sent-cv` | Adds the immutable PDF CV later; requires a separate idempotency key |
 | `GET` | `/api/applications/{id}/submitted-cv` | Downloads the exact stored PDF with `Cache-Control: no-store` |
+| `POST` | `/api/applications/{id}/activities` | Adds an activity to the application's contact history |
+| `GET` | `/api/applications/{id}/activities` | Lists activities from newest to oldest |
+| `GET` | `/api/applications/{id}/activities/{activityId}` | Returns one application activity |
+| `PUT` | `/api/applications/{id}/activities/{activityId}` | Replaces an activity's editable fields |
 | `POST` | `/api/applications/{id}/interview-reports` | Adds a reflection for one interview round |
 | `GET` | `/api/applications/{id}/interview-reports` | Lists interview reports from newest to oldest |
 | `GET` | `/api/applications/{id}/interview-reports/{reportId}` | Returns one interview report |
@@ -168,6 +174,24 @@ GET /api/applications?active=true&dueOnOrBefore=2026-08-08
 
 `dueOnOrBefore` is inclusive and can only be used with an explicit `active=true`.
 
+Record a recruiter interaction or follow-up:
+
+```json
+{
+  "occurredAt": "2026-07-31T14:30:00Z",
+  "type": "EMAIL",
+  "summary": "Recruiter confirmed the technical interview",
+  "details": "The interview will focus on Java, Spring, and system design."
+}
+```
+
+Activity types are `EMAIL`, `CALL`, `LINKEDIN`, `FOLLOW_UP`, `TASK`, and `OTHER`.
+Activities can also be added after an application has closed. They are ordered by
+occurrence and creation time from newest to oldest, and the latest occurrence is
+exposed as `lastActivityAt` in application responses. `PUT` replaces the editable
+fields while preserving the activity ID and creation time. Activities are not
+deleted through the API.
+
 Record a reflection after each interview round:
 
 ```json
@@ -242,10 +266,11 @@ Linux or macOS:
 ./mvnw clean verify
 ```
 
-The test suite includes focused request, file, and domain tests, a v1-to-v5
+The test suite includes focused request, file, and domain tests, a v1-to-v6
 migration test, database-constraint tests against PostgreSQL, and full Spring MVC
-integration tests for job postings, applications, interview reports, durable replay,
-race conditions, exact PDF bytes, the OpenAPI document, and Swagger UI.
+integration tests for job postings, applications, activity history, interview
+reports, durable replay, race conditions, exact PDF bytes, the OpenAPI document,
+and Swagger UI.
 
 ## Design decisions
 
@@ -273,6 +298,9 @@ race conditions, exact PDF bytes, the OpenAPI document, and Swagger UI.
   validation, the domain model, and PostgreSQL constraints.
 - Application responses include the target track, company, and role title so due
   work is useful without extra requests.
+- Activity details stay behind their dedicated child endpoints. Application
+  responses expose only `lastActivityAt`, calculated for a whole result set without
+  per-application queries.
 - Interview reports are separate child resources. This keeps private long-form notes
   out of routine application lists while allowing multiple rounds on the same date.
 - Listing is intentionally unpaginated for the small local dataset; pagination

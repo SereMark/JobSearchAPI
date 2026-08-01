@@ -2,6 +2,8 @@ package hu.seregergo.jobsearch.jobapplication.application;
 
 import hu.seregergo.jobsearch.jobapplication.domain.ApplicationConflictException;
 import hu.seregergo.jobsearch.jobapplication.domain.JobApplication;
+import hu.seregergo.jobsearch.jobapplication.persistence.ApplicationActivityRepository;
+import hu.seregergo.jobsearch.jobapplication.persistence.ApplicationLastActivityProjection;
 import hu.seregergo.jobsearch.jobapplication.persistence.JobApplicationRepository;
 import hu.seregergo.jobsearch.jobapplication.persistence.SubmittedCvMetadataProjection;
 import hu.seregergo.jobsearch.jobapplication.persistence.SubmittedCvRepository;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
@@ -29,17 +32,20 @@ public class JobApplicationService {
     private final JobApplicationRepository applicationRepository;
     private final JobPostingRepository jobPostingRepository;
     private final SubmittedCvRepository cvRepository;
+    private final ApplicationActivityRepository activityRepository;
     private final Clock clock;
 
     public JobApplicationService(
         JobApplicationRepository applicationRepository,
         JobPostingRepository jobPostingRepository,
         SubmittedCvRepository cvRepository,
+        ApplicationActivityRepository activityRepository,
         Clock clock
     ) {
         this.applicationRepository = applicationRepository;
         this.jobPostingRepository = jobPostingRepository;
         this.cvRepository = cvRepository;
+        this.activityRepository = activityRepository;
         this.clock = clock;
     }
 
@@ -65,7 +71,7 @@ public class JobApplicationService {
 
         try {
             JobApplication saved = applicationRepository.saveAndFlush(application);
-            return new JobApplicationDetails(saved, null);
+            return new JobApplicationDetails(saved, null, null);
         } catch (DataIntegrityViolationException exception) {
             throw ApplicationConflictException.alreadyExists(exception);
         }
@@ -140,11 +146,19 @@ public class JobApplicationService {
                 SubmittedCvMetadataProjection::getApplicationId,
                 Function.identity()
             ));
+        Map<UUID, Instant> lastActivityAtByApplicationId = activityRepository
+            .findLastActivityAtByApplicationIdIn(applicationIds)
+            .stream()
+            .collect(Collectors.toMap(
+                ApplicationLastActivityProjection::getApplicationId,
+                ApplicationLastActivityProjection::getLastActivityAt
+            ));
 
         return applications.stream()
             .map(application -> new JobApplicationDetails(
                 application,
-                metadataFor(application.getId(), metadataByApplicationId)
+                metadataFor(application.getId(), metadataByApplicationId),
+                lastActivityAtByApplicationId.get(application.getId())
             ))
             .toList();
     }
